@@ -35,7 +35,10 @@ function getRtdb() {
   try {
     const app = getApp(); // the app already initialised in ./firebase
     // Explicit URL only: env var first, then whatever the app config already has.
-    const url = import.meta.env.VITE_FIREBASE_DATABASE_URL || app.options.databaseURL;
+   const url =
+  import.meta.env.VITE_FIREBASE_RTDB_ENDPOINT ||
+  import.meta.env.VITE_FIREBASE_DATABASE_URL ||
+  app.options.databaseURL;
     if (!url) {
       console.warn(
         "[presence] No Realtime Database URL. Set VITE_FIREBASE_DATABASE_URL " +
