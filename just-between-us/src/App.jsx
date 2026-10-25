@@ -349,6 +349,9 @@ function ChatDrawer({ open, onClose, messages, role, onSend, onJump, onReact, on
   ];
   const commonEmojis = emojiMap.map((e) => e.emoji);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [sheetDragY, setSheetDragY] = useState(0);
+  const [sheetDragging, setSheetDragging] = useState(false);
+  const dragStart = useRef(null);
   const [showBgMenu, setShowBgMenu] = useState(false);
   const [emojiFilter, setEmojiFilter] = useState("");
   const bgMenuRef = useRef(null);
@@ -388,6 +391,29 @@ function ChatDrawer({ open, onClose, messages, role, onSend, onJump, onReact, on
   useEffect(() => {
     if (!open) { setMenuId(null); setEditingId(null); setChatError(""); setSearchQuery(""); setShowEmojiPicker(false); setDeleteConfirmId(null); setReplyTo(null); }
   }, [open]);
+
+  // Each time a different message menu opens, start from the compact reaction row at rest position
+  useEffect(() => { setShowEmojiPicker(false); setSheetDragY(0); setSheetDragging(false); dragStart.current = null; }, [menuId]);
+
+  // Drag-to-dismiss for the mobile action sheet (handle area only, so menu taps/scrolling are unaffected)
+  const SHEET_CLOSE_PX = 100;
+  const onHandleDown = (e) => {
+    dragStart.current = e.clientY;
+    setSheetDragging(true);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onHandleMove = (e) => {
+    if (dragStart.current == null) return;
+    setSheetDragY(Math.max(0, e.clientY - dragStart.current)); // downward only
+  };
+  const onHandleEnd = (e) => {
+    if (dragStart.current == null) return;
+    const dy = Math.max(0, e.clientY - dragStart.current);
+    dragStart.current = null;
+    setSheetDragging(false);
+    if (e.type !== "pointercancel" && dy > SHEET_CLOSE_PX) setMenuId(null);
+    else setSheetDragY(0); // snap back smoothly
+  };
 
   // Lock page scroll while the drawer is open
   useEffect(() => {
@@ -464,6 +490,7 @@ function ChatDrawer({ open, onClose, messages, role, onSend, onJump, onReact, on
     const t = text.trim();
     if (!t) return;
     setText(""); setChatError("");
+    onTyping("");
     try {
       await onSend(t, replyTo);
       setReplyTo(null);
@@ -779,34 +806,52 @@ function ChatDrawer({ open, onClose, messages, role, onSend, onJump, onReact, on
 
       {/* Message actions: bottom sheet on mobile, centered on desktop */}
       {open && menuMsg && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 overscroll-contain"
+          style={{ opacity: sheetDragY ? Math.max(0.4, 1 - sheetDragY / 400) : undefined }}
           onClick={() => setMenuId(null)}>
-          <div role="menu" className="w-full max-w-sm bg-[#1a0b0b] rounded-t-3xl sm:rounded-2xl overflow-hidden animate-slide-up sm:animate-in sm:zoom-in shadow-2xl border border-red-900/20"
+          {/* Wrapper carries the drag transform so the sheet's own entrance animation is untouched */}
+          <div className="w-full max-w-sm"
+            style={{ transform: sheetDragY ? `translateY(${sheetDragY}px)` : undefined, transition: sheetDragging ? "none" : "transform 200ms ease-out" }}>
+          <div role="menu" className="w-full bg-[#1a0b0b] rounded-t-3xl sm:rounded-2xl overflow-hidden animate-slide-up sm:animate-in sm:zoom-in shadow-2xl border border-red-900/20"
             onClick={(e) => e.stopPropagation()}>
-            <div className="h-1.5 w-12 bg-white/10 rounded-full mx-auto my-3 sm:hidden" />
-            <div className="flex justify-around p-4 border-b border-red-900/20 bg-white/5">
+            {/* Drag handle: generous touch area, touch-action none so the browser doesn't scroll while dragging */}
+            <div className="sm:hidden flex justify-center items-center h-8 cursor-grab active:cursor-grabbing select-none"
+              style={{ touchAction: "none" }}
+              onPointerDown={onHandleDown} onPointerMove={onHandleMove}
+              onPointerUp={onHandleEnd} onPointerCancel={onHandleEnd}
+              aria-label="Drag down to close">
+              <div className="h-1.5 w-12 bg-white/25 rounded-full" />
+            </div>
+            <div className="border-b border-red-900/20 bg-white/5 px-3 py-3">
               {showEmojiPicker ? (
-                <div className="grid grid-cols-5 gap-2 w-full">
-                  {commonEmojis.map((emoji) => (
-                    <button key={emoji} onClick={() => { onReact(menuMsg, emoji); setMenuId(null); }}
-                      className="text-2xl hover:scale-125 active:scale-90 transition-transform">
-                      {emoji}
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-2">
+                  <button onClick={() => setShowEmojiPicker(false)} aria-label="Back to quick reactions"
+                    className="self-start flex items-center gap-1 rounded-full px-2 py-1 text-xs text-gold/80 hover:bg-white/10 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                    Back
+                  </button>
+                  <div className="grid grid-cols-6 gap-1 max-h-[38vh] overflow-y-auto overscroll-contain scrollbar-hide">
+                    {commonEmojis.map((emoji) => (
+                      <button key={emoji} onClick={() => { onReact(menuMsg, emoji); setMenuId(null); }}
+                        className="h-11 flex items-center justify-center text-2xl rounded-xl hover:bg-white/10 active:scale-90 transition-transform">
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                <>
+                <div className="flex items-center justify-between gap-1">
                   {commonEmojis.slice(0, 6).map((emoji) => (
                     <button key={emoji} onClick={() => { onReact(menuMsg, emoji); setMenuId(null); }}
-                      className="text-3xl hover:scale-125 active:scale-90 transition-transform px-2">
+                      className="h-11 min-w-0 flex-1 max-w-[48px] flex items-center justify-center text-2xl sm:text-3xl rounded-full hover:bg-white/10 hover:scale-110 active:scale-90 transition-transform">
                       {emoji}
                     </button>
                   ))}
-                  <button onClick={() => setShowEmojiPicker(true)}
-                    className="text-2xl hover:scale-125 active:scale-90 transition-transform px-2 text-gold">
-                    +{commonEmojis.length - 6}
+                  <button onClick={() => setShowEmojiPicker(true)} aria-label="More reactions" title="More reactions"
+                    className="h-10 w-10 shrink-0 flex items-center justify-center rounded-full bg-white/10 border border-white/10 text-gold hover:bg-white/20 active:scale-90 transition-all">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 5v14M5 12h14" /></svg>
                   </button>
-                </>
+                </div>
               )}
             </div>
             <div className="flex flex-col py-2 px-2">
@@ -836,6 +881,7 @@ function ChatDrawer({ open, onClose, messages, role, onSend, onJump, onReact, on
               )}
             </div>
             <div className="h-[env(safe-area-inset-bottom)] sm:hidden" />
+          </div>
           </div>
         </div>
       )}
@@ -933,7 +979,6 @@ export default function App() {
     return onSnapshot(typingRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        console.log("Typing status received:", data, "My role:", role);
         setTypingStatus({
           admin: data.admin === true,
           her: data.her === true,
@@ -1054,20 +1099,16 @@ export default function App() {
     }, 300);
   };
 
-  const setTyping = async (isTyping) => {
-    const typingRef = doc(db, "typing", "status");
-    console.log("Setting typing:", role, isTyping);
+  // Writes ONLY the current user's own flag. A merge-set creates the doc if it is missing
+  // and never touches the other participant's field. `role` is a dependency so the
+  // callback can never write to the wrong participant after the admin logs in/out.
+  const setTyping = useCallback(async (isTyping) => {
     try {
-      await updateDoc(typingRef, { [role]: isTyping });
-    } catch (e) {
-      // Document might not exist yet, create it
-      try {
-        await setDoc(typingRef, { [role]: isTyping, admin: false, her: false }, { merge: true });
-      } catch (err) {
-        console.error("Typing status error:", err);
-      }
+      await setDoc(doc(db, "typing", "status"), { [role]: isTyping }, { merge: true });
+    } catch (err) {
+      console.error("Typing status error:", err);
     }
-  };
+  }, [role]);
 
   const handleTyping = useCallback((text) => {
     clearTimeout(typingTimeout.current);
@@ -1077,7 +1118,13 @@ export default function App() {
     } else {
       setTyping(false);
     }
-  }, []);
+  }, [setTyping]);
+
+  // Clear this user's typing flag when the role changes or the app unmounts
+  useEffect(() => () => {
+    clearTimeout(typingTimeout.current);
+    setDoc(doc(db, "typing", "status"), { [role]: false }, { merge: true }).catch(() => {});
+  }, [role]);
 
   const addSecret = async () => {
     if (addingSecret) return; // prevents double-click creating/overwriting the same number
