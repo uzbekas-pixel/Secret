@@ -12,6 +12,7 @@ const MAX_IMAGE_MB = 5;
 const MAX_MESSAGE_LEN = 2000;
 const APP_TITLE = "Just Between Us";
 
+
 const ts = (m) => m.createdAt?.toMillis?.() ?? Date.now();
 
 /* ---------- Helpers ---------- */
