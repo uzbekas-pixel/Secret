@@ -4,6 +4,7 @@ import {
   updateDoc, deleteDoc, setDoc, serverTimestamp, FieldPath, arrayUnion, arrayRemove,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { useOwnPresence, usePeerPresence, presenceLabel } from "./presence";
 
 const ADMIN_PASSCODE = "uzbekas";
 const PLACEHOLDER = "[Write your secret here...]";
@@ -287,7 +288,7 @@ function SecretCard({ secret, isAdmin, flash, onReply, onSave, onDelete, onPin }
 }
 
 /* ---------- Chat drawer ---------- */
-function ChatDrawer({ open, onClose, messages, role, onSend, onJump, onReact, onDelete, onEdit, secretsById, typingStatus, onTyping, onlineStatus }) {
+function ChatDrawer({ open, onClose, messages, role, onSend, onJump, onReact, onDelete, onEdit, secretsById, typingStatus, onTyping, presence }) {
   const [text, setText] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
@@ -301,6 +302,15 @@ function ChatDrawer({ open, onClose, messages, role, onSend, onJump, onReact, on
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const stickToBottom = useRef(true);
+
+  // Re-render periodically so "last seen 5 min ago" stays fresh while the drawer is open
+  const [, setPresenceTick] = useState(0);
+  const presenceStatus = presence?.status;
+  useEffect(() => {
+    if (!open || presenceStatus !== "offline") return undefined;
+    const id = setInterval(() => setPresenceTick((t) => t + 1), 30000);
+    return () => clearInterval(id);
+  }, [open, presenceStatus]);
 
   // Always look the message up live, so reactions/edits never act on a stale copy
   const menuMsg = menuId ? messages.find((m) => m.id === menuId) : null;
@@ -553,11 +563,9 @@ function ChatDrawer({ open, onClose, messages, role, onSend, onJump, onReact, on
         <header className="flex items-center justify-between border-b border-red-900/30 px-5 py-4 pt-[max(1rem,env(safe-area-inset-top))] bg-[#1a0b0b]/80 backdrop-blur-md">
           <div>
             <h2 className="font-serif text-2xl text-gold">Between us</h2>
-            {onlineStatus && onlineStatus[role === "admin" ? "her" : "admin"] && (
-              <p className="text-xs text-gold/70">
-                {role === "admin" ? "Rayhona" : "Sardor"} is online
-              </p>
-            )}
+            <p className="text-xs text-gold/70" aria-live="polite">
+              {presenceLabel(role === "admin" ? "Rayhona" : "Sardor", presence, Date.now() + (presence?.offset || 0))}
+            </p>
           </div>
           <div className="flex gap-2">
             <button className="btn-ghost !px-3" onClick={() => setShowBgMenu(!showBgMenu)} title="Change background">
@@ -922,9 +930,11 @@ export default function App() {
   const [flashId, setFlashId] = useState(null);
   const [addingSecret, setAddingSecret] = useState(false);
   const [typingStatus, setTypingStatus] = useState({ admin: false, her: false });
-  const [onlineStatus, setOnlineStatus] = useState({ admin: false, her: false });
   const [newMessageNotif, setNewMessageNotif] = useState(null);
   const role = isAdmin ? "admin" : "her";
+  // Realtime Database presence: publish my own, subscribe to the other participant's
+  useOwnPresence(role);
+  const peerPresence = usePeerPresence(role === "admin" ? "her" : "admin");
   const seenKey = `jbu_seen_${role}`;
   const [lastSeen, setLastSeen] = useState(() => Number(safeStore.get(localStorage, seenKey) || 0));
   const seeded = useRef(false);
@@ -986,46 +996,6 @@ export default function App() {
       }
     }, (e) => console.error("Typing listener error:", e));
   }, []);
-
-  // Live listener: online status
-  useEffect(() => {
-    const onlineRef = doc(db, "online", "status");
-    return onSnapshot(onlineRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setOnlineStatus({
-          admin: data.admin === true,
-          her: data.her === true,
-        });
-      }
-    }, (e) => console.error("Online listener error:", e));
-  }, []);
-
-  // Set online status on mount, offline on unmount
-  useEffect(() => {
-    const onlineRef = doc(db, "online", "status");
-    const setOnline = async () => {
-      try {
-        await updateDoc(onlineRef, { [role]: true });
-      } catch (e) {
-        await setDoc(onlineRef, { [role]: true, admin: false, her: false }, { merge: true });
-      }
-    };
-    const setOffline = async () => {
-      try {
-        await updateDoc(onlineRef, { [role]: false });
-      } catch (e) {
-        console.error("Set offline error:", e);
-      }
-    };
-
-    setOnline();
-    window.addEventListener("beforeunload", setOffline);
-    return () => {
-      window.removeEventListener("beforeunload", setOffline);
-      setOffline();
-    };
-  }, [role]);
 
   // Per-role unread tracking
   useEffect(() => { setLastSeen(Number(safeStore.get(localStorage, seenKey) || 0)); }, [seenKey]);
@@ -1251,7 +1221,7 @@ export default function App() {
       <ChatDrawer open={chatOpen} onClose={closeChat} messages={messages} role={role}
         onSend={(t, replyTo) => sendMessage(t, null, replyTo)} onJump={jumpTo} onReact={handleReaction}
         onDelete={deleteMessage} onEdit={editMessage} secretsById={secretsById}
-        typingStatus={typingStatus} onTyping={handleTyping} onlineStatus={onlineStatus} />
+        typingStatus={typingStatus} onTyping={handleTyping} presence={peerPresence} />
 
       {passOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => setPassOpen(false)}>
