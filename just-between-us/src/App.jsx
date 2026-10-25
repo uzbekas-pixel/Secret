@@ -924,7 +924,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
-  const [isAdmin, setIsAdmin] = useState(() => safeStore.get(sessionStorage, "jbu_admin") === "1");
+const [isAdmin, setIsAdmin] = useState(() => safeStore.get(localStorage, "jbu_admin") === "1");
   const [chatOpen, setChatOpen] = useState(false);
   const [passOpen, setPassOpen] = useState(false);
   const [pass, setPass] = useState("");
@@ -1042,13 +1042,13 @@ export default function App() {
     t.t = setTimeout(() => { t.n = 0; }, 2000);
     if (t.n >= 5) {
       t.n = 0;
-      if (isAdmin) { setIsAdmin(false); safeStore.remove(sessionStorage, "jbu_admin"); }
+      if (isAdmin) { setIsAdmin(false); safeStore.remove(localStorage, "jbu_admin"); }
       else { setPass(""); setPassErr(false); setPassOpen(true); }
     }
   };
   const submitPass = (e) => {
     e.preventDefault();
-    if (pass === ADMIN_PASSCODE) { setIsAdmin(true); safeStore.set(sessionStorage, "jbu_admin", "1"); setPassOpen(false); }
+    if (pass === ADMIN_PASSCODE) { setIsAdmin(true); safeStore.set(localStorage, "jbu_admin", "1"); setPassOpen(false); }
     else setPassErr(true);
   };
 
