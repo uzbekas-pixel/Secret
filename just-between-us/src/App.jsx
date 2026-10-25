@@ -4,7 +4,7 @@ import {
   updateDoc, deleteDoc, setDoc, serverTimestamp, FieldPath, arrayUnion, arrayRemove,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { useOwnPresence, usePeerPresence, presenceLabel } from "./presence.js";
+import { useOwnPresence, usePeerPresence, presenceLabel } from "./presence";
 
 const ADMIN_PASSCODE = "uzbekas";
 const PLACEHOLDER = "[Write your secret here...]";
